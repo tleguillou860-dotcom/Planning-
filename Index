@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Planning Caisses Geomont</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1e3a8a">
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; background: #f4f6f8; padding: 10px; margin: 0; }
+  h1 { font-size: 1.1em; text-align: center; color: #1e3a8a; margin: 8px 0; }
+  .controls { text-align: center; margin-bottom: 10px; }
+  button { background: #1e3a8a; color: #fff; border: none; padding: 8px 12px; border-radius: 4px; margin: 2px; font-size: 0.9em; }
+  .table-container { overflow-x: auto; background: #fff; padding: 5px; border-radius: 6px; }
+  table { border-collapse: collapse; width: 100%; font-size: 11px; min-width: 900px; }
+  th, td { border: 1px solid #000; padding: 3px 2px; text-align: center; vertical-align: middle; }
+  th { background: #e0e7ff; color: #1e3a8a; font-weight: bold; font-size: 10px; }
+  .nom { font-weight: bold; text-align: left; padding-left: 4px; min-width: 70px; }
+  .contrat { font-weight: bold; }
+  .label-jour { font-weight: bold; background: #f0f0f0; }
+  .repos { background: #d3d3d3; font-style: italic; color: #555; }
+  input { width: 55px; font-size: 11px; border: none; background: transparent; text-align: center; }
+  input:focus { outline: 1px solid #1e3a8a; background: #fff; }
+  .total-jour { font-weight: bold; background: #fafafa; }
+  .actual-total { font-size: 10px; color: #1e3a8a; }
+  .ok { color: #16a34a; }
+  .fail { color: #dc2626; }
+  @media print {
+    body { background: #fff; padding: 0; }
+    .controls { display: none; }
+    .table-container { overflow: visible; }
+    table { font-size: 10px; }
+    input { border: none; }
+  }
+</style>
+</head>
+<body>
+<h1>Planning Caisses - Horaires Geomont</h1>
+<div class="controls">
+  <label>Semaine :
+    <select id="semaine">
+      <option value="B" selected>Semaine B</option>
+      <option value="A">Semaine A</option>
+    </select>
+  </label>
+  <button onclick="recalc()">Recalculer</button>
+  <button onclick="window.print()">Imprimer / PDF</button>
+</div>
+<div class="table-container">
+  <table id="planningTable">
+    <thead>
+      <tr>
+        <th rowspan="2">Nom</th>
+        <th rowspan="2">Total</th>
+        <th rowspan="2">Jours</th>
+        <th colspan="2">Lundi</th>
+        <th colspan="2">Mardi</th>
+        <th colspan="2">Mercredi</th>
+        <th colspan="2">Jeudi</th>
+        <th colspan="2">Vendredi</th>
+        <th colspan="2">Samedi</th>
+        <th colspan="2">Dimanche</th>
+      </tr>
+      <tr>
+        <th>début</th><th>fin</th>
+        <th>début</th><th>fin</th>
+        <th>début</th><th>fin</th>
+        <th>début</th><th>fin</th>
+        <th>début</th><th>fin</th>
+        <th>début</th><th>fin</th>
+        <th>début</th><th>fin</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+<script>
+const JOURS = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
+
+const EQUIPE = [
+  { nom:'Emilie', role:'RESP', contrat:'36h45', jours: {
+      Lundi: null,
+      Mardi: { matin: { debut:'13h30', fin:'19h30' }, aprem: null },
+      Mercredi: { matin: { debut:'8h30', fin:'12h30' }, aprem: { debut:'13h30', fin:'19h30' } },
+      Jeudi: { matin: { debut:'13h30', fin:'19h30' }, aprem: null },
+      Vendredi: { matin: { debut:'13h30', fin:'19h30' }, aprem: null },
+      Samedi: { matin: { debut:'8h00', fin:'16h45' }, aprem: null },
+      Dimanche: null
+  }},
+  { nom:'Estelle R', role:'RESP', contrat:'36h45', jours: {
+      Lundi: { matin: { debut:'8h30', fin:'12h30' }, aprem: { debut:'13h30', fin:'19h30' } },
+      Mardi: { matin: { debut:'8h30', fin:'12h30' }, aprem: null },
+      Mercredi: null,
+      Jeudi: { matin: { debut:'8h30', fin:'12h30' }, aprem: null },
+      Vendredi: { matin: { debut:'8h30', fin:'12h30' }, aprem: { debut:'13h30', fin:'16h30' } },
+      Samedi: { matin: { debut:'8h00', fin:'15h45' }, aprem: null },
+      Dimanche: { matin: { debut:'8h30', fin:'12h30' }, aprem: null }
+  }},
+  { nom:'Nathalia', role:'HOT', contrat:'32h30', jours: {
+      Lundi: { matin: { debut:'8h30', fin:'12h30' }, aprem: { debut:'13h30', fin:'18h30' } },
+      Mardi: null,
+      Mercredi: null,
+      Jeudi: { matin: { debut:'8h30', fin:'12h30' }, aprem: { debut:'13h30', fin:'17h30' } },
+      Vendredi: { matin: { debut:'8h30', fin:'12h30' }, aprem: { debut:'13h30', fin:'16h30' } },
+      Samedi: { matin: { debut:'8h00', fin:'13h00' }, aprem: null },
+      Dimanche: { matin: { debut:'8h30', fin:'12h30' }, aprem: null }
+  }},
+  { nom:'Anaelle', role:'HOT', contrat:'36h45', jours: {
+      Lundi: { matin: { debut:'9h00', fin:'12h30' }, aprem: { debut:'13h30', fin:'17h30' } },
+      Mardi: { matin: { debut:'9h00', fin:'12h30' }, aprem: { debut:'13h30', fin:'17h30' } },
+      Mercredi: { matin: { debut:'9h00', fin:'12h30' }, aprem: { debut:'13h30', fin:'17h45' } },
+      Jeudi: null,
+      Vendredi: null,
+      Samedi: { matin: { debut:'8h00', fin:'12h30' }, aprem: { debut:'13h30', fin:'19h30' } },
+      Dimanche: { matin: { debut:'9h00', fin:'12h30' }, aprem: null }
+  }},
+  { nom:'Anaïs', role:'HOT', contrat:'36h45', jours: {
+      Lundi: { matin: { debut:'9h30', fin:'12h30' }, aprem: { debut:'13h30', fin:'19h00' } },
+      Mardi: { matin: { debut:'9h15', fin:'12h30' }, aprem: { debut:'13h45', fin:'19h00' } },
+      Mercredi: { matin: { debut:'9h15', fin:'12h30' }, aprem: null },
+      Jeudi: { matin: { debut:'9h15', fin:'12h30' }, aprem: { debut:'13h45', fin:'18h45' } },
+      Vendredi: { matin: { debut:'9h15', fin:'12h30' }, aprem: null },
+      Samedi: { matin: { debut:'8h30', fin:'13h30' }, aprem: null },
+      Dimanche: null
+  }},
+  { nom:'Stephane', role:'HOT', contrat:'36h45', jours: {
+      Lundi: null,
+      Mardi: { matin: { debut:'9h15', fin:'12h30' }, aprem: { debut:'13h30', fin:'19h00' } },
+      Mercredi: { matin: { debut:'9h15', fin:'12h30' }, aprem: { debut:'13h30', fin:'19h00' } },
+      Jeudi: { matin: { debut:'9h30', fin:'12h30' }, aprem: { debut:'13h30', fin:'19h15' } },
+      Vendredi: { matin: { debut:'9h30', fin:'12h30' }, aprem: null },
+      Samedi: { matin: { debut:'9h00', fin:'12h30' }, aprem: { debut:'13h30', fin:'19h00' } },
+      Dimanche: null
+  }},
+  { nom:'Estelle 18h', role:'HOT', contrat:'18h00', jours: {
+      Lundi: null,
+      Mardi: { matin: null, aprem: { debut:'14h00', fin:'19h00' } },
+      Mercredi: null,
+      Jeudi: null,
+      Vendredi: { matin: null, aprem: { debut:'13h30', fin:'19h30' } },
+      Samedi: { matin: { debut:'8h00', fin:'12h00' }, aprem: null },
+      Dimanche: { matin: { debut:'9h00', fin:'12h00' }, aprem: null }
+  }},
+  { nom:'Marion', role:'HOT', contrat:'36h45', jours: {
+      Lundi: { matin: { debut:'8h30', fin:'12h45' }, aprem: null },
+      Mardi: { matin: { debut:'9h00', fin:'12h30' }, aprem: null },
+      Mercredi: null,
+      Jeudi: null,
+      Vendredi: { matin: { debut:'9h00', fin:'12h30' }, aprem: { debut:'13h30', fin:'19h30' } },
+      Samedi: { matin: { debut:'8h30', fin:'13h00' }, aprem: { debut:'14h00', fin:'19h30' } },
+      Dimanche: { matin: { debut:'9h00', fin:'12h30' }, aprem: null }
+  }}
+];
+
+function parseHeure(h) {
+  if (!h) return 0;
+  const m = h.match(/(\d+)[h:](\d+)/);
+  if (!m) return 0;
+  return parseInt(m[1]) * 60 + parseInt(m[2]);
+}
+function formatMin(min) {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return h + 'h' + (m < 10 ? '0' : '') + m;
+}
+
+function createInput(collab, jour, type, field, value) {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = value || '';
+  input.dataset.collab = collab;
+  input.dataset.jour = jour;
+  input.dataset.type = type;
+  input.dataset.field = field;
+  input.addEventListener('change', recalc);
+  return input;
+}
+
+function render() {
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = '';
+  EQUIPE.forEach(p => {
+    const trMatin = document.createElement('tr');
+    const trAprem = document.createElement('tr');
+    const trTotal = document.createElement('tr');
+    const tdNom = document.createElement('td');
+    tdNom.rowSpan = 3;
+    tdNom.textContent = p.nom;
+    tdNom.className = 'nom';
+    const tdContrat = document.createElement('td');
+    tdContrat.rowSpan = 3;
+    tdContrat.innerHTML = p.contrat + '<br><span class="actual-total" id="actual-' + p.nom.replace(/\s/g,'_') + '"></span>';
+    tdContrat.className = 'contrat';
+    const tdLabelMatin = document.createElement('td');
+    tdLabelMatin.textContent = 'matin';
+    tdLabelMatin.className = 'label-jour';
+    const tdLabelAprem = document.createElement('td');
+    tdLabelAprem.textContent = 'après midi';
+    tdLabelAprem.className = 'label-jour';
+    const tdLabelTotal = document.createElement('td');
+    tdLabelTotal.textContent = 'total';
+    tdLabelTotal.className = 'label-jour total-jour';
+    trMatin.appendChild(tdNom);
+    trMatin.appendChild(tdContrat);
+    trMatin.appendChild(tdLabelMatin);
+    trAprem.appendChild(tdLabelAprem);
+    trTotal.appendChild(tdLabelTotal);
+    JOURS.forEach(jour => {
+      const dayData = p.jours[jour];
+      if (dayData && dayData.matin) {
+        const tdD = document.createElement('td');
+        tdD.appendChild(createInput(p.nom, jour, 'matin', 'debut', dayData.matin.debut));
+        trMatin.appendChild(tdD);
+        const tdF = document.createElement('td');
+        tdF.appendChild(createInput(p.nom, jour, 'matin', 'fin', dayData.matin.fin));
+        trMatin.appendChild(tdF);
+      } else {
+        const td = document.createElement('td');
+        td.colSpan = 2;
+        td.textContent = 'REPOS';
+        td.className = 'repos';
+        trMatin.appendChild(td);
+      }
+      if (dayData && dayData.aprem) {
+        const tdD = document.createElement('td');
+        tdD.appendChild(createInput(p.nom, jour, 'aprem', 'debut', dayData.aprem.debut));
+        trAprem.appendChild(tdD);
+        const tdF = document.createElement('td');
+        tdF.appendChild(createInput(p.nom, jour, 'aprem', 'fin', dayData.aprem.fin));
+        trAprem.appendChild(tdF);
+      } else {
+        const td = document.createElement('td');
+        td.colSpan = 2;
+        td.textContent = 'REPOS';
+        td.className = 'repos';
+        trAprem.appendChild(td);
+      }
+      const tdTotal = document.createElement('td');
+      tdTotal.colSpan = 2;
+      tdTotal.className = 'total-jour';
+      tdTotal.dataset.collab = p.nom;
+      tdTotal.dataset.jour = jour;
+      tdTotal.textContent = '0h00';
+      trTotal.appendChild(tdTotal);
+    });
+    tbody.appendChild(trMatin);
+    tbody.appendChild(trAprem);
+    tbody.appendChild(trTotal);
+  });
+}
+
+function recalc() {
+  const map = {};
+  document.querySelectorAll('input').forEach(inp => {
+    const c = inp.dataset.collab;
+    const j = inp.dataset.jour;
+    const t = inp.dataset.type;
+    const f = inp.dataset.field;
+    if (!map[c]) map[c] = {};
+    if (!map[c][j]) map[c][j] = {};
+    if (!map[c][j][t]) map[c][j][t] = {};
+    map[c][j][t][f] = inp.value;
+  });
+  EQUIPE.forEach(p => {
+    let totalWeek = 0;
+    JOURS.forEach(jour => {
+      let dayMin = 0;
+      const day = map[p.nom] && map[p.nom][jour];
+      if (day) {
+        ['matin','aprem'].forEach(type => {
+          if (day[type] && day[type].debut && day[type].fin) {
+            const d = parseHeure(day[type].debut);
+            const f = parseHeure(day[type].fin);
+            if (f > d) dayMin += (f - d);
+          }
+        });
+      }
+      totalWeek += dayMin;
+      const td = document.querySelector(`.total-jour[data-collab="${p.nom}"][data-jour="${jour}"]`);
+      if (td) td.textContent = formatMin(dayMin);
+    });
+    const actualSpan = document.getElementById('actual-' + p.nom.replace(/\s/g,'_'));
+    if (actualSpan) {
+      actualSpan.textContent = '(' + formatMin(totalWeek) + ')';
+      const contractMin = parseHeure(p.contrat);
+      if (totalWeek === contractMin) {
+        actualSpan.className = 'actual-total ok';
+      } else {
+        actualSpan.className = 'actual-total fail';
+      }
+    }
+  });
+}
+
+render();
+recalc();
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js');
+}
+</script>
+</body>
+</html>
+{
+  "name": "Planning Caisses Geomont",
+  "short_name": "Planning",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f4f6f8",
+  "theme_color": "#1e3a8a",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+
+    }
+  ]
+}
+const CACHE = 'planning-v1';
+const ASSETS = ['./', './index.html', './manifest.json', './icon.svg'];
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
+});
+self.addEventListener('fetch', e => {
+  e.respondWith(caches.match(e.request).then(r => r || fetch(e.request)));
+});
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#1e3a8a"/>
+  <text x="256" y="300" font-size="200" fill="#fff" text-anchor="middle" font-family="Arial">PG</text>
+</svg>
